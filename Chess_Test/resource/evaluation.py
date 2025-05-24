@@ -105,7 +105,6 @@ class Evaluation:
 
     def evaluate(self, board, color):
         phase = self.get_game_phase(board)
-        
 
         material = self.material_score(board, color)
         positional = self.position_score(board, color, phase)
@@ -119,11 +118,11 @@ class Evaluation:
         queen_safety = self.queen_safety_score(board, color, phase)
 
         total = (
-            material * 0.30 +  # Giảm từ 0.35 xuống 0.30
+            material * 0.30 +
             positional * 0.25 +
             mobility * 0.10 +
             pawn_structure * 0.10 +
-            king_safety * 0.10 +  # Tăng từ 0.05 lên 0.10
+            king_safety * 0.10 +
             bishop_pair * 0.05 +
             rook_open_file * 0.05 +
             knight_outpost * 0.05 +
@@ -135,7 +134,7 @@ class Evaluation:
             for file in range(8):
                 piece = board[rank][file]
                 if piece:
-                    value = self.piece_values[piece[1]]
+                    value = PIECE_VALUES[piece[1]]  # Sửa từ self.piece_values thành PIECE_VALUES
                     total += value if piece[0] == color else -value
 
         # Phạt nặng nếu vua di chuyển sớm
@@ -143,15 +142,15 @@ class Evaluation:
         if king_pos:
             file, rank = king_pos
             if color == 'w' and rank != 7:  # Vua trắng không ở hàng 1
-                total -= 300  # Phạt nặng hơn để tránh di chuyển sớm
+                total -= 300
             elif color == 'b' and rank != 0:  # Vua đen không ở hàng 8
                 total -= 300
 
         # Thưởng cho việc nhập thành
         if self.has_castled(board, color):
-            total += 200  # Thưởng lớn hơn để ưu tiên nhập thành
+            total += 200
 
-        # Đánh giá đơn giản về kiểm soát trung tâm (tùy chọn)
+        # Đánh giá kiểm soát trung tâm
         center_squares = [(3, 3), (3, 4), (4, 3), (4, 4)]
         for file, rank in center_squares:
             piece = board[rank][file]
@@ -431,7 +430,25 @@ class Evaluation:
         return count
 
     def is_passed_pawn(self, board, pos, color):
-        pass  # Logic kiểm tra passed pawn đã có trong pawn_structure_score
+        file, rank = pos
+        opponent_pawns = []
+        for r in range(8):
+            for f in range(8):
+                piece = board[r][f]
+                if piece and piece[0] != color and piece[1] == 'P':
+                    opponent_pawns.append((f, r))
+        
+        is_passed = True
+        for delta in [-1, 0, 1]:
+            check_file = file + delta
+            if 0 <= check_file < 8:
+                for r in range(rank + 1, 8) if color == 'w' else range(rank - 1, -1, -1):
+                    if any(p[0] == check_file and p[1] == r for p in opponent_pawns):
+                        is_passed = False
+                        break
+                if not is_passed:
+                    break
+        return is_passed
 
     def count_king_attackers(self, board, king_pos, color):
         opponent_color = 'w' if color == 'b' else 'b'

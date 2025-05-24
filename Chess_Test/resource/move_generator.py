@@ -1,167 +1,174 @@
+from bitboard_utility import *
+from magic_bitboards import MagicBitboards
+
 class MoveGenerator:
-    def __init__(self, board):
-        self.board = board
-        self.is_white_turn = True  # Default value, updated by ChessBot
-        self.castling_rights = ''
-        self.last_move = None
-        # Initialize any move generation data (e.g., bitboards or lookup tables)
-        self.move_data = {}  # Placeholder for move generation data
+    def __init__(self, bitboards):
+        self.bb = bitboards
+        self.magic = MagicBitboards()
+        self.moves = []
 
-    def init_move_generation(self):
-        """Initialize move generation state."""
-        # Use self.is_white_turn instead of self.board.is_white_turn
-        self.is_white_to_move = self.is_white_turn
-        # Additional initialization (e.g., update bitboards or move tables)
-        # For now, we assume this is minimal since we're using a 2D list
-        self.move_data.clear()  # Reset any cached move data
+    def generate_all_moves(self, color):
+        self.moves.clear()
+        self.generate_rook_moves(color)
+        self.generate_bishop_moves(color)
+        self.generate_queen_moves(color)
+        self.generate_knight_moves(color)
+        self.generate_king_moves(color)
+        self.generate_pawn_moves(color)
+        return self.moves
 
-    def generate_moves(self):
-        """Generate all valid moves for the current player."""
-        self.init_move_generation()
-        moves = []
-        color = 'w' if self.is_white_to_move else 'b'
-        
-        # Iterate over the 8x8 board
-        for rank in range(8):
-            for file in range(8):
-                piece = self.board[rank][file]
-                if piece and piece[0] == color:
-                    piece_moves = self.get_piece_moves(file, rank, piece)
-                    for move in piece_moves:
-                        start_square = rank * 8 + file
-                        end_square = move[1] * 8 + move[0]
-                        moves.append((start_square, end_square))
-        
-        return moves
+    def add_moves(self, from_square, target_bb):
+        while target_bb:
+            to_square, target_bb = pop_lsb(target_bb)
+            self.moves.append((from_square, to_square))
 
-    def get_piece_moves(self, file, rank, piece):
-        """Generate moves for a specific piece at (file, rank)."""
-        moves = []
-        piece_type = piece[1]
-        color = piece[0]
-        
-        if piece_type == 'P':  # Pawn
-            moves.extend(self.get_pawn_moves(file, rank, color))
-        elif piece_type == 'N':  # Knight
-            moves.extend(self.get_knight_moves(file, rank))
-        elif piece_type == 'B':  # Bishop
-            moves.extend(self.get_bishop_moves(file, rank))
-        elif piece_type == 'R':  # Rook
-            moves.extend(self.get_rook_moves(file, rank))
-        elif piece_type == 'Q':  # Queen
-            moves.extend(self.get_queen_moves(file, rank))
-        elif piece_type == 'K':  # King
-            moves.extend(self.get_king_moves(file, rank))
-        
-        return moves
+    def generate_rook_moves(self, color):
+        occupied = self.bb.get_occupied()
+        rooks = self.bb.bitboards[color + 'R']
+        own_pieces = self.bb.get_color_occupied(color)
+        while rooks:
+            sq, rooks = pop_lsb(rooks)
+            attacks = self.get_rook_attacks(sq, occupied) & ~own_pieces
+            self.add_moves(sq, attacks)
 
-    def get_pawn_moves(self, file, rank, color):
-        moves = []
-        direction = -1 if color == 'w' else 1
-        start_rank = 6 if color == 'w' else 1
-        
-        # Move one square forward
-        new_rank = rank + direction
-        if 0 <= new_rank < 8 and self.board[new_rank][file] == '':
-            moves.append((file, new_rank))
-            
-            # Move two squares from starting rank
-            if rank == start_rank:
-                new_rank2 = rank + 2 * direction
-                if self.board[new_rank2][file] == '' and self.board[new_rank][file] == '':
-                    moves.append((file, new_rank2))
-        
-        # Capture diagonally
-        for df in [-1, 1]:
-            new_file = file + df
-            if 0 <= new_file < 8 and 0 <= new_rank < 8:
-                target = self.board[new_rank][new_file]
-                if target and target[0] != color:
-                    moves.append((new_file, new_rank))
-        
-        # En passant
-        if self.last_move and len(self.last_move) == 2:
-            (start_file, start_rank), (end_file, end_rank) = self.last_move
-            if abs(start_rank - end_rank) == 2 and self.board[end_rank][end_file][1] == 'P':
-                ep_rank = rank
-                ep_file = end_file
-                if abs(file - ep_file) == 1 and (rank == 3 and color == 'w' or rank == 4 and color == 'b'):
-                    moves.append((ep_file, rank + direction))
-        
-        return moves
+    def generate_bishop_moves(self, color):
+        occupied = self.bb.get_occupied()
+        bishops = self.bb.bitboards[color + 'B']
+        own_pieces = self.bb.get_color_occupied(color)
+        while bishops:
+            sq, bishops = pop_lsb(bishops)
+            attacks = self.get_bishop_attacks(sq, occupied) & ~own_pieces
+            self.add_moves(sq, attacks)
 
-    def get_knight_moves(self, file, rank):
-        moves = []
-        knight_moves = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
-        for df, dr in knight_moves:
-            new_file, new_rank = file + df, rank + dr
-            if 0 <= new_file < 8 and 0 <= new_rank < 8:
-                target = self.board[new_rank][new_file]
-                if not target or target[0] != self.board[rank][file][0]:
-                    moves.append((new_file, new_rank))
-        return moves
+    def generate_queen_moves(self, color):
+        self.generate_rook_moves(color)
+        self.generate_bishop_moves(color)
 
-    def get_bishop_moves(self, file, rank):
-        moves = []
-        directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-        for df, dr in directions:
-            for i in range(1, 8):
-                new_file, new_rank = file + i * df, rank + i * dr
-                if not (0 <= new_file < 8 and 0 <= new_rank < 8):
-                    break
-                target = self.board[new_rank][new_file]
-                if not target:
-                    moves.append((new_file, new_rank))
-                elif target[0] != self.board[rank][file][0]:
-                    moves.append((new_file, new_rank))
-                    break
-                else:
-                    break
-        return moves
+    def generate_knight_moves(self, color):
+        knights = self.bb.bitboards[color + 'N']
+        own_pieces = self.bb.get_color_occupied(color)
+        while knights:
+            sq, knights = pop_lsb(knights)
+            attacks = self.knight_attack_mask(sq) & ~own_pieces
+            self.add_moves(sq, attacks)
 
-    def get_rook_moves(self, file, rank):
-        moves = []
-        directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-        for df, dr in directions:
-            for i in range(1, 8):
-                new_file, new_rank = file + i * df, rank + i * dr
-                if not (0 <= new_file < 8 and 0 <= new_rank < 8):
-                    break
-                target = self.board[new_rank][new_file]
-                if not target:
-                    moves.append((new_file, new_rank))
-                elif target[0] != self.board[rank][file][0]:
-                    moves.append((new_file, new_rank))
-                    break
-                else:
-                    break
-        return moves
+    def generate_king_moves(self, color):
+        kings = self.bb.bitboards[color + 'K']
+        own_pieces = self.bb.get_color_occupied(color)
+        while kings:
+            sq, kings = pop_lsb(kings)
+            attacks = self.king_attack_mask(sq) & ~own_pieces
+            self.add_moves(sq, attacks)
 
-    def get_queen_moves(self, file, rank):
-        moves = []
-        moves.extend(self.get_bishop_moves(file, rank))
-        moves.extend(self.get_rook_moves(file, rank))
-        return moves
+    def generate_pawn_moves(self, color):
+        own_pawns = self.bb.bitboards[color + 'P']
+        empty = ~self.bb.get_occupied() & 0xFFFFFFFFFFFFFFFF
+        enemy = self.bb.get_color_occupied('b' if color == 'w' else 'w')
 
-    def get_king_moves(self, file, rank):
-        moves = []
-        king_moves = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-        for df, dr in king_moves:
-            new_file, new_rank = file + df, rank + dr
-            if 0 <= new_file < 8 and 0 <= new_rank < 8:
-                target = self.board[new_rank][new_file]
-                if not target or target[0] != self.board[rank][file][0]:
-                    moves.append((new_file, new_rank))
-        
-        # Castling
-        if self.board[rank][file][1] == 'K':
-            if self.is_white_to_move and 'K' in self.castling_rights and self.board[7][5] == '' and self.board[7][6] == '':
-                moves.append((6, 7))  # Kingside castling (white)
-            if self.is_white_to_move and 'Q' in self.castling_rights and self.board[7][3] == '' and self.board[7][2] == '' and self.board[7][1] == '':
-                moves.append((2, 7))  # Queenside castling (white)
-            if not self.is_white_to_move and 'k' in self.castling_rights and self.board[0][5] == '' and self.board[0][6] == '':
-                moves.append((6, 0))  # Kingside castling (black)
-            if not self.is_white_to_move and 'q' in self.castling_rights and self.board[0][3] == '' and self.board[0][2] == '' and self.board[0][1] == '':
-                moves.append((2, 0))  # Queenside castling (black)
-        
-        return moves
+        if color == 'w':
+            single_push = shift_north(own_pawns) & empty
+            double_push = shift_north(single_push & 0x0000000000FF0000) & empty
+            left_captures = shift_northwest(own_pawns) & enemy
+            right_captures = shift_northeast(own_pawns) & enemy
+        else:
+            single_push = shift_south(own_pawns) & empty
+            double_push = shift_south(single_push & 0x0000FF0000000000) & empty
+            left_captures = shift_southwest(own_pawns) & enemy
+            right_captures = shift_southeast(own_pawns) & enemy
+
+        self.add_pawn_moves(own_pawns, single_push, direction='N' if color == 'w' else 'S')
+        self.add_pawn_moves(own_pawns, double_push, direction='N' if color == 'w' else 'S', double=True)
+        self.add_pawn_captures(own_pawns, left_captures, 'left', color)
+        self.add_pawn_captures(own_pawns, right_captures, 'right', color)
+
+    def add_pawn_moves(self, pawns, targets, direction='N', double=False):
+        while targets:
+            to_sq, targets = pop_lsb(targets)
+            if direction == 'N':
+                from_sq = to_sq - (16 if double else 8)
+            else:
+                from_sq = to_sq + (16 if double else 8)
+            self.moves.append((from_sq, to_sq))
+
+    def add_pawn_captures(self, pawns, captures, side, color):
+        while captures:
+            to_sq, captures = pop_lsb(captures)
+            if color == 'w':
+                from_sq = to_sq - 7 if side == 'left' else to_sq - 9
+            else:
+                from_sq = to_sq + 9 if side == 'left' else to_sq + 7
+            self.moves.append((from_sq, to_sq))
+
+    def get_rook_attacks(self, square, blockers):
+        attacks = 0
+        rank, file = divmod(square, 8)
+        for r in range(rank + 1, 8):
+            sq = r * 8 + file
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1:
+                break
+        for r in range(rank - 1, -1, -1):
+            sq = r * 8 + file
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1:
+                break
+        for f in range(file + 1, 8):
+            sq = rank * 8 + f
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1:
+                break
+        for f in range(file - 1, -1, -1):
+            sq = rank * 8 + f
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1:
+                break
+        return attacks
+
+    def get_bishop_attacks(self, square, blockers):
+        attacks = 0
+        rank, file = divmod(square, 8)
+        r, f = rank + 1, file + 1
+        while r < 8 and f < 8:
+            sq = r * 8 + f
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1: break
+            r += 1; f += 1
+        r, f = rank - 1, file - 1
+        while r >= 0 and f >= 0:
+            sq = r * 8 + f
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1: break
+            r -= 1; f -= 1
+        r, f = rank - 1, file + 1
+        while r >= 0 and f < 8:
+            sq = r * 8 + f
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1: break
+            r -= 1; f += 1
+        r, f = rank + 1, file - 1
+        while r < 8 and f >= 0:
+            sq = r * 8 + f
+            attacks |= 1 << sq
+            if (blockers >> sq) & 1: break
+            r += 1; f -= 1
+        return attacks
+
+    def knight_attack_mask(self, square):
+        rank, file = divmod(square, 8)
+        moves = [(-2, -1), (-1, -2), (-2, 1), (-1, 2), (1, -2), (2, -1), (1, 2), (2, 1)]
+        result = 0
+        for dr, df in moves:
+            r, f = rank + dr, file + df
+            if 0 <= r < 8 and 0 <= f < 8:
+                result |= 1 << (r * 8 + f)
+        return result
+
+    def king_attack_mask(self, square):
+        rank, file = divmod(square, 8)
+        moves = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+        result = 0
+        for dr, df in moves:
+            r, f = rank + dr, file + df
+            if 0 <= r < 8 and 0 <= f < 8:
+                result |= 1 << (r * 8 + f)
+        return result
