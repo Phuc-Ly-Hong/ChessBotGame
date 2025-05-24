@@ -1,0 +1,83 @@
+import chess
+import chess.engine
+import numpy as np
+
+# Cấu hình engine
+engine_a_path = "path_to_new_engine"  # Engine A (cần kiểm tra)
+engine_b_path = "path_to_stockfish"  # Engine B (tham chiếu)
+
+engine_a = chess.engine.SimpleEngine.popen_uci(engine_a_path)
+engine_b = chess.engine.SimpleEngine.popen_uci(engine_b_path)
+
+# Tham số SPRT
+elo0 = 0  # H0: Engine A và B có Elo như nhau
+elo1 = 50  # H1: Engine A mạnh hơn 50 Elo
+alpha = 0.05  # Sai số loại I (False Positive)
+beta = 0.05  # Sai số loại II (False Negative)
+llr = 0  # Log-likelihood ratio
+lower_bound = np.log(beta / (1 - alpha))  # Ngưỡng dưới
+upper_bound = np.log((1 - beta) / alpha)  # Ngưỡng trên
+
+# Lưu kết quả
+wins, draws, losses = 0, 0, 0
+
+def sprt_test():
+    """ Kiểm tra nếu có thể kết luận engine A mạnh hơn hoặc yếu hơn """
+    global llr, wins, draws, losses
+    
+    total_games = wins + draws + losses
+    if total_games == 0:
+        return False  # Chưa đủ dữ liệu
+
+    score = (wins + 0.5 * draws) / total_games  # Tính điểm trung bình
+
+    # Xác suất engine A mạnh hơn B
+    p0 = 0.5  # Nếu hai engine ngang sức
+    p1 = 1 / (1 + 10 ** ((elo0 - elo1) / 400))  # Nếu A mạnh hơn 50 Elo
+
+    # Cập nhật Log-likelihood ratio (LLR)
+    llr += np.log(p1 / p0) if np.random.rand() < score else np.log((1 - p1) / (1 - p0))
+
+    print(f"Game: {total_games}, Score: {score:.3f}, LLR: {llr:.3f}")
+
+    # Nếu LLR vượt ngưỡng, kết thúc kiểm tra
+    if llr < lower_bound:
+        print("Engine A bị từ chối (không đủ mạnh).")
+        return True
+    if llr > upper_bound:
+        print("Engine A được chấp nhận (mạnh hơn đáng kể).")
+        return True
+    return False
+
+# Chạy ván đấu giữa hai engine
+def play_game():
+    global wins, draws, losses
+
+    board = chess.Board()
+    limit = chess.engine.Limit(time=0.1)  # Giới hạn thời gian mỗi nước đi
+
+    while not board.is_game_over():
+        if board.turn == chess.WHITE:
+            result = engine_a.play(board, limit)
+        else:
+            result = engine_b.play(board, limit)
+        board.push(result.move)
+
+    result = board.result()  # Kết quả ván đấu
+    if result == "1-0":
+        wins += 1
+    elif result == "0.5-0.5":
+        draws += 1
+    else:
+        losses += 1
+
+# Chạy SPRT
+max_games = 100  # Giới hạn số ván tối đa
+for i in range(max_games):
+    play_game()
+    if sprt_test():
+        break
+
+# Đóng engine
+engine_a.quit()
+engine_b.quit()
